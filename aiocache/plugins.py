@@ -16,6 +16,7 @@ class BasePlugin:
         pass
 
 
+# CO(lk): init with do_nothing() to create attributes like 'pre_get', ...
 BasePlugin.add_hook(
     BasePlugin.do_nothing, ["pre_{}".format(method.__name__) for method in API.CMDS]
 )
@@ -34,6 +35,7 @@ class TimingPlugin(BasePlugin):
     @classmethod
     def save_time(cls, method):
         async def do_save_time(self, client, *args, took=0, **kwargs):
+            # CO(lk): client is the cache instance themselves
             if not hasattr(client, "profiling"):
                 client.profiling = {}
 
@@ -54,6 +56,7 @@ class TimingPlugin(BasePlugin):
         return do_save_time
 
 
+# CO(lk): set save_time() for all API methods as post action
 for method in API.CMDS:
     TimingPlugin.add_hook(
         TimingPlugin.save_time(method.__name__), ["post_{}".format(method.__name__)]

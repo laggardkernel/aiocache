@@ -269,6 +269,7 @@ class RedisCache(RedisBackend, BaseCache):
         return options
 
     def _build_key(self, key, namespace=None):
+        # CO(lk): add separtor ":", different with the default BaseCache._build_key()
         if namespace is not None:
             return "{}{}{}".format(namespace, ":" if namespace else "", key)
         if self.namespace is not None:

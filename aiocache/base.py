@@ -15,6 +15,7 @@ SENTINEL = object()
 class API:
 
     CMDS = set()
+    # CO(lk): pre_add, pre_get, pre_set, ... All public API on BaseCache.
 
     @classmethod
     def register(cls, func):
@@ -39,6 +40,7 @@ class API:
 
         @functools.wraps(func)
         async def _timeout(self, *args, timeout=NOT_SET, **kwargs):
+            # CO(lk): timeout for function calc. Default 5 set on BaseCache.
             timeout = self.timeout if timeout == NOT_SET else timeout
             if timeout == 0 or timeout is None:
                 return await func(self, *args, **kwargs)
@@ -69,6 +71,7 @@ class API:
         @functools.wraps(func)
         async def _plugins(self, *args, **kwargs):
             start = time.monotonic()
+            # CO(lk): plugin is defined for specific function
             for plugin in self.plugins:
                 await getattr(plugin, "pre_{}".format(func.__name__))(self, *args, **kwargs)
 
@@ -511,6 +514,7 @@ class _Conn:
         await self._cache.release_conn(self._conn)
 
     def __getattr__(self, name):
+        # CO(l): __getattribute__ on cache
         return self._cache.__getattribute__(name)
 
     @classmethod
@@ -521,5 +525,8 @@ class _Conn:
         return _do_inject_conn
 
 
+# CO(lk): the way to pass _conn into Cache.api() is so .. Use another decorator?
+#  Set BaseCache.api() onto _Conn. So on SubclsCache, api is not conn injected,
+#  but on _Conn, it's injected.
 for cmd in API.CMDS:
     setattr(_Conn, cmd.__name__, _Conn._inject_conn(cmd.__name__))

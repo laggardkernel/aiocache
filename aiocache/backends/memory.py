@@ -15,6 +15,7 @@ class SimpleMemoryBackend:
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    # TODO: _gets() v.s. _get()
     async def _get(self, key, encoding="utf-8", _conn=None):
         return SimpleMemoryBackend._cache.get(key)
 
@@ -25,9 +26,12 @@ class SimpleMemoryBackend:
         return [SimpleMemoryBackend._cache.get(key) for key in keys]
 
     async def _set(self, key, value, ttl=None, _cas_token=None, _conn=None):
+        # NOTE(lk): _cas_token, check and set. If the token value not changed, set
+        #  the value. Used in OptimisticLock.
         if _cas_token is not None and _cas_token != SimpleMemoryBackend._cache.get(key):
             return 0
 
+        # CO(lk): handler stores coro of deletion
         if key in SimpleMemoryBackend._handlers:
             SimpleMemoryBackend._handlers[key].cancel()
 

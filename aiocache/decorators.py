@@ -68,6 +68,8 @@ class cached:
         self.ttl = ttl
         self.key = key
         self.key_builder = key_builder
+        # CO(lk): the obj being decorated could be an instance method,
+        #  use 'noself' to indicate stripping it
         self.noself = noself
         self.alias = alias
         self.cache = None
@@ -78,6 +80,8 @@ class cached:
         self._kwargs = kwargs
 
     def __call__(self, f):
+        # CO(lk): pool, or conn creation should be delay when used to wrap the
+        #  original function.
         if self.alias:
             self.cache = caches.get(self.alias)
         else:
@@ -92,6 +96,7 @@ class cached:
         async def wrapper(*args, **kwargs):
             return await self.decorator(f, *args, **kwargs)
 
+        # CO(lk): bind the cache obj used onto decorated function
         wrapper.cache = self.cache
         return wrapper
 
@@ -190,6 +195,9 @@ class cached_stampede(cached):
         if value is not None:
             return value
 
+        # NOTE(lk): it's important to understand the RedLock: if you failed to
+        #  get the lock, still pass but wait for others to release the lock.
+        #  This results cache set when you enter.
         async with RedLock(self.cache, key, self.lease):
             value = await self.get_from_cache(key)
             if value is not None:
@@ -207,6 +215,7 @@ def _get_cache(cache=Cache.MEMORY, serializer=None, plugins=None, **cache_kwargs
 
 
 def _get_args_dict(func, args, kwargs):
+    # CO(lk): get arg name for positional arg
     defaults = {
         arg_name: arg.default
         for arg_name, arg in inspect.signature(func).parameters.items()
@@ -306,6 +315,10 @@ class multi_cached:
     ):
         missing_keys = []
         partial = {}
+        # NOTE(lk):
+        #  keys, cache key list
+        #  new_args: args modified by replacing key_from_attrs with list of cache keys
+        #  args_index: index of keys_from_attr if it's positional, otherwise -1
         keys, new_args, args_index = self.get_cache_keys(f, args, kwargs)
 
         if cache_read:
@@ -320,6 +333,7 @@ class multi_cached:
         else:
             missing_keys = list(keys)
 
+        # CO(lk): only calculate and update those missing
         if args_index > -1:
             new_args[args_index] = missing_keys
         else:
@@ -338,12 +352,16 @@ class multi_cached:
 
     def get_cache_keys(self, f, args, kwargs):
         args_dict = _get_args_dict(f, args, kwargs)
+        # NOTE: multi_cached caches multiple item at the same time.
+        #  Value of keys_from_attr must be a list.
         keys = args_dict.get(self.keys_from_attr, []) or []
         keys = [self.key_builder(key, f, *args, **kwargs) for key in keys]
 
         args_names = f.__code__.co_varnames[: f.__code__.co_argcount]
         new_args = list(args)
         keys_index = -1
+        # CO(lk): if keys_from_attr is positional. replace keys_from_attr in
+        #  args as cache key list
         if self.keys_from_attr in args_names and self.keys_from_attr not in kwargs:
             keys_index = args_names.index(self.keys_from_attr)
             new_args[keys_index] = keys

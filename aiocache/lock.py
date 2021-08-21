@@ -64,7 +64,9 @@ class RedLock:
     _EVENTS = {}
 
     def __init__(self, client: BaseCache, key: str, lease: Union[int, float]):
+        # CO(lk): client is the backend cache implementation
         self.client = client
+        # CO(lk): lock for a key, used for cache setting
         self.key = self.client._build_key(key + "-lock")
         self.lease = lease
         self._value = ""
@@ -78,11 +80,15 @@ class RedLock:
             await self.client._add(self.key, self._value, ttl=self.lease)
             RedLock._EVENTS[self.key] = asyncio.Event()
         except ValueError:
+            # CO(lk): if acquire lock failed, wait for others to release the lock.
+            #  Cause this lock is used for cache setting, if the lock released,
+            #  it means another one have set the cache, the cache is available now.
             await self._wait_for_release()
 
     async def _wait_for_release(self):
         try:
             await asyncio.wait_for(RedLock._EVENTS[self.key].wait(), self.lease)
+            # NOTE(lk): hold on. If failed to get lock, just pass?
         except asyncio.TimeoutError:
             pass
         except KeyError:  # lock was released when wait_for was rescheduled
